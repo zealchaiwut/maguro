@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1a1410">
+  <title>Maguro</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Login -->
+    <section id="view-login" class="view hidden">
+      <div class="login-card">
+        <p class="brand-mark">🍱</p>
+        <h1 class="brand-title">Maguro</h1>
+        <p class="brand-sub">Homemade bento orders</p>
+        <form id="login-form">
+          <label class="field">
+            <span>Password</span>
+            <input type="password" id="login-password" autocomplete="current-password" required>
+          </label>
+          <p id="login-error" class="error hidden"></p>
+          <button type="submit" class="btn btn-primary btn-block">Enter</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- Main shell -->
+    <div id="shell" class="hidden">
+      <header class="topbar">
+        <div class="topbar-inner">
+          <h1 class="logo">Maguro</h1>
+          <button type="button" id="btn-logout" class="btn-text">Log out</button>
+        </div>
+      </header>
+
+      <main id="main-content"></main>
+
+      <nav class="bottom-nav" aria-label="Main">
+        <button type="button" class="nav-item active" data-route="orders">
+          <span class="nav-icon">📋</span>
+          <span>Orders</span>
+        </button>
+        <button type="button" class="nav-item" data-route="summary">
+          <span class="nav-icon">📊</span>
+          <span>Summary</span>
+        </button>
+        <button type="button" class="nav-item nav-add" data-route="new">
+          <span class="nav-icon">＋</span>
+        </button>
+      </nav>
+    </div>
+  </div>
+
+  <template id="tpl-orders">
+    <section class="page">
+      <div class="page-header">
+        <h2>Orders</h2>
+        <div class="date-picker-row">
+          <select id="orders-date" class="date-select"></select>
+          <button type="button" id="orders-new-date" class="btn btn-sm btn-ghost">+ New date</button>
+        </div>
+      </div>
+      <div class="toolbar">
+        <label class="toggle">
+          <input type="checkbox" id="orders-show-done">
+          <span>Show done</span>
+        </label>
+      </div>
+      <div id="orders-list" class="orders-list"></div>
+      <p id="orders-empty" class="empty hidden">No orders for this date.</p>
+    </section>
+  </template>
+
+  <template id="tpl-summary">
+    <section class="page">
+      <div class="page-header">
+        <h2>Day summary</h2>
+        <div class="date-picker-row">
+          <select id="summary-date" class="date-select"></select>
+          <button type="button" id="summary-new-date" class="btn btn-sm btn-ghost">+ New date</button>
+        </div>
+      </div>
+      <div class="toolbar">
+        <label class="toggle">
+          <input type="checkbox" id="summary-open-only" checked>
+          <span>Open orders only</span>
+        </label>
+      </div>
+      <div id="summary-stats" class="stats-grid"></div>
+      <div id="summary-rounds"></div>
+    </section>
+  </template>
+
+  <template id="tpl-form">
+    <section class="page">
+      <div class="page-header">
+        <h2 id="form-title">New order</h2>
+      </div>
+      <form id="order-form" class="order-form">
+        <label class="field">
+          <span>Customer name</span>
+          <input type="text" name="name" required maxlength="200" placeholder="P' Nant">
+        </label>
+        <label class="field">
+          <span>Date</span>
+          <input type="date" name="date" required>
+        </label>
+        <div class="field-row">
+          <label class="field">
+            <span>Boxes</span>
+            <input type="number" name="amount" min="1" max="99" value="1" required>
+          </label>
+          <label class="field">
+            <span>Delivery fee (฿)</span>
+            <input type="number" name="delivery_fee" min="0" value="0">
+          </label>
+        </div>
+        <label class="field">
+          <span>Round</span>
+          <select name="delivery_time" required></select>
+        </label>
+        <label class="field">
+          <span>Fulfillment</span>
+          <select name="fulfillment" required></select>
+        </label>
+        <label class="field">
+          <span>Address</span>
+          <textarea name="address" rows="2" placeholder="For delivery only"></textarea>
+        </label>
+        <label class="field">
+          <span>Note</span>
+          <textarea name="note" rows="3" placeholder="Special requests…"></textarea>
+        </label>
+        <div class="field-row checks">
+          <label class="check">
+            <input type="checkbox" name="paid">
+            <span>Paid</span>
+          </label>
+          <label class="field field-inline">
+            <span>Status</span>
+            <select name="status"></select>
+          </label>
+        </div>
+        <p id="form-error" class="error hidden"></p>
+        <div class="form-actions">
+          <button type="button" id="form-cancel" class="btn btn-ghost">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save order</button>
+        </div>
+      </form>
+    </section>
+  </template>
+
+  <dialog id="new-date-dialog" class="dialog">
+    <form id="new-date-form" method="dialog">
+      <h3 class="dialog-title">New order date</h3>
+      <p class="dialog-sub">Pick the day you’ll make or deliver bento.</p>
+      <label class="field">
+        <span>Date</span>
+        <input type="date" id="new-date-input" required>
+      </label>
+      <div class="form-actions">
+        <button type="button" id="new-date-cancel" class="btn btn-ghost">Cancel</button>
+        <button type="submit" class="btn btn-primary">Add date</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/static/js/app.js" type="module"></script>
+</body>
+</html>
