@@ -11,7 +11,17 @@
   <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-  <div id="app">
+  <div class="device-stage">
+    <div class="device-iphone14pro">
+      <div class="device-island" aria-hidden="true"></div>
+      <div class="device-screen">
+        <div class="browser-chrome" aria-hidden="true">
+          <div class="browser-url-bar">
+            <span class="browser-lock" aria-hidden="true">🔒</span>
+            <span class="browser-url">maguro.onrender.com</span>
+          </div>
+        </div>
+        <div id="app">
     <!-- Login -->
     <section id="view-login" class="view hidden">
       <div class="login-card">
@@ -49,8 +59,9 @@
           <span class="nav-icon">📊</span>
           <span>Summary</span>
         </button>
-        <button type="button" class="nav-item nav-add" data-route="new">
-          <span class="nav-icon">＋</span>
+        <button type="button" class="nav-item" data-route="inbox">
+          <span class="nav-icon">💬</span>
+          <span>Inbox</span>
         </button>
       </nav>
     </div>
@@ -58,8 +69,11 @@
 
   <template id="tpl-orders">
     <section class="page">
-      <div class="page-header">
-        <h2>Orders</h2>
+      <div class="page-header page-header-orders">
+        <div class="page-title-row">
+          <h2>Orders</h2>
+          <button type="button" id="btn-add-order" class="btn-add-order" aria-label="New order">＋</button>
+        </div>
         <div class="date-picker-row">
           <select id="orders-date" class="date-select"></select>
           <button type="button" id="orders-new-date" class="btn btn-sm btn-ghost">+ New date</button>
@@ -93,6 +107,24 @@
       </div>
       <div id="summary-stats" class="stats-grid"></div>
       <div id="summary-rounds"></div>
+    </section>
+  </template>
+
+  <template id="tpl-inbox">
+    <section class="page page-inbox">
+      <div class="page-header">
+        <h2>Instagram inbox</h2>
+      </div>
+      <p class="inbox-hint">DM threads from Instagram — mark replied and label before adding to Orders.</p>
+      <div id="inbox-connect" class="inbox-connect">
+        <p id="inbox-status-text" class="inbox-connect-msg">Connect your Instagram business account to sync DMs.</p>
+        <button type="button" id="inbox-connect-btn" class="btn btn-primary btn-block">Connect Instagram</button>
+        <button type="button" id="inbox-disconnect-btn" class="btn btn-ghost btn-block hidden">Disconnect</button>
+        <p id="inbox-error" class="error hidden"></p>
+      </div>
+      <div id="inbox-filters" class="inbox-filters hidden"></div>
+      <div id="inbox-list" class="inbox-list"></div>
+      <p id="inbox-empty" class="empty hidden">No messages yet.</p>
     </section>
   </template>
 
@@ -169,6 +201,13 @@
       </div>
     </form>
   </dialog>
+
+        </div><!-- #app -->
+      </div><!-- .device-screen -->
+      <div class="device-home-indicator" aria-hidden="true"></div>
+    </div><!-- .device-iphone14pro -->
+    <p class="device-label">iPhone 14 Pro · 393 × 852</p>
+  </div><!-- .device-stage -->
 
   <script src="/static/js/app.js" type="module"></script>
 </body>

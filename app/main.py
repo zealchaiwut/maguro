@@ -6,8 +6,10 @@ from datetime import date as date_cls
 from pathlib import Path
 from typing import Any
 
+from urllib.parse import quote
+
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -18,7 +20,12 @@ from app.auth import (
     require_auth,
     set_session_cookie,
 )
-from app.config import FULFILLMENT_OPTIONS, ROUNDS, STATUS_OPTIONS, get_settings
+from app.config import FULFILLMENT_OPTIONS, INBOX_GROUPS, INBOX_LABELS, ROUNDS, STATUS_OPTIONS, get_settings
+from app.inbox.service import instagram_status, list_inbox_payload, update_inbox_thread
+from app.inbox.store import clear_meta_connection
+from app.meta.client import MetaAPIError
+from app.meta.oauth import build_oauth_url, complete_oauth, verify_oauth_state
+from app.meta.webhook import handle_webhook_payload, parse_raw_json, verify_signature, verify_webhook
 from app.notion.orders import (
     NotionNotConfiguredError,
     build_summary,
@@ -67,6 +74,11 @@ class OrderPatch(BaseModel):
     delivery_fee: int | None = Field(default=None, ge=0)
 
 
+class InboxPatch(BaseModel):
+    replied: bool | None = None
+    label: str | None = None
+
+
 def auth_dep(request: Request) -> None:
     require_auth(request)
 
@@ -91,6 +103,7 @@ def health() -> dict[str, Any]:
         payload["notion"] = notion
         if not notion.get("ok"):
             payload["ok"] = False
+    payload["instagram"] = instagram_status()
     return payload
 
 
@@ -103,6 +116,13 @@ def public_config() -> dict[str, Any]:
         "status_options": list(STATUS_OPTIONS),
         "box_price": settings.box_price,
         "timezone": settings.timezone,
+        "inbox_labels": list(INBOX_LABELS),
+        "inbox_groups": [
+            {"id": "all", "label": "All"},
+            {"id": "new", "label": "New message"},
+            {"id": "pending", "label": "Pending"},
+            {"id": "replied", "label": "Replied"},
+        ],
     }
 
 
@@ -181,6 +201,107 @@ def api_update_order(
         return update_order(order_id, data)
     except Exception as exc:
         raise _handle_notion_error(exc) from exc
+
+
+@app.get("/api/instagram/status")
+def api_instagram_status(_: None = Depends(auth_dep)) -> dict[str, Any]:
+    return instagram_status()
+
+
+@app.get("/api/instagram/auth")
+def api_instagram_auth(_: None = Depends(auth_dep)) -> RedirectResponse:
+    try:
+        url = build_oauth_url()
+    except MetaAPIError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return RedirectResponse(url)
+
+
+@app.get("/api/instagram/callback")
+def api_instagram_callback(
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    error_description: str | None = None,
+) -> RedirectResponse:
+    if error:
+        detail = quote(error_description or error)
+        return RedirectResponse(f"/#inbox?ig_error={detail}")
+    if not code or not state or not verify_oauth_state(state):
+        return RedirectResponse("/#inbox?ig_error=invalid_oauth_state")
+    try:
+        complete_oauth(code)
+    except MetaAPIError as exc:
+        return RedirectResponse(f"/#inbox?ig_error={quote(str(exc))}")
+    return RedirectResponse("/#inbox?ig_connected=1")
+
+
+@app.post("/api/instagram/disconnect")
+def api_instagram_disconnect(_: None = Depends(auth_dep)) -> dict[str, bool]:
+    clear_meta_connection()
+    return {"ok": True}
+
+
+@app.get("/api/instagram/webhook")
+def api_instagram_webhook_verify(
+    hub_mode: str | None = Query(default=None, alias="hub.mode"),
+    hub_verify_token: str | None = Query(default=None, alias="hub.verify_token"),
+    hub_challenge: str | None = Query(default=None, alias="hub.challenge"),
+) -> PlainTextResponse:
+    challenge = verify_webhook(hub_mode, hub_verify_token, hub_challenge)
+    if challenge is None:
+        raise HTTPException(status_code=403, detail="Verification failed")
+    return PlainTextResponse(challenge)
+
+
+@app.post("/api/instagram/webhook")
+async def api_instagram_webhook(request: Request) -> dict[str, Any]:
+    raw = await request.body()
+    signature = request.headers.get("X-Hub-Signature-256")
+    settings = get_settings()
+    if settings.meta_app_secret and not verify_signature(raw, signature):
+        raise HTTPException(status_code=403, detail="Invalid signature")
+    payload = parse_raw_json(raw)
+    count = handle_webhook_payload(payload)
+    return {"ok": True, "updated": count}
+
+
+@app.get("/api/inbox")
+def api_inbox(_: None = Depends(auth_dep)) -> dict[str, Any]:
+    status = instagram_status()
+    if not status["connected"]:
+        empty_groups = {g: [] for g in INBOX_GROUPS}
+        empty_counts = {g: 0 for g in INBOX_GROUPS}
+        empty_counts["all"] = 0
+        return {
+            "connected": False,
+            "threads": [],
+            "groups": empty_groups,
+            "counts": empty_counts,
+            "status": status,
+        }
+    try:
+        payload = list_inbox_payload()
+    except MetaAPIError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    payload["status"] = status
+    return payload
+
+
+@app.patch("/api/inbox/{conversation_id}")
+def api_inbox_patch(
+    conversation_id: str,
+    body: InboxPatch,
+    _: None = Depends(auth_dep),
+) -> dict[str, Any]:
+    try:
+        return update_inbox_thread(
+            conversation_id,
+            replied=body.replied,
+            label=body.label,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.get("/api/summary")

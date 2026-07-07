@@ -22,3 +22,17 @@ services:
         value: "1350"
       - key: TIMEZONE
         value: Asia/Bangkok
+      - key: DATA_DIR
+        value: data
+      - key: META_APP_ID
+        sync: false
+      - key: META_APP_SECRET
+        sync: false
+      - key: META_VERIFY_TOKEN
+        sync: false
+      - key: META_REDIRECT_URI
+        sync: false
+      - key: META_PAGE_ACCESS_TOKEN
+        sync: false
+      - key: META_IG_USER_ID
+        sync: false

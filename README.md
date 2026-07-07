@@ -9,6 +9,67 @@ Homemade bento order tracker for two-person use. Notion is the database; this ap
 - **Day summary** — total orders & boxes, revenue estimate (฿1,350/box + delivery fees), delivery & pick-up lists per round with notes
 - **Status** — `Open` while active, mark `Done` when delivered (payment tracked separately via `Paid`)
 
+- **Inbox** — sync Instagram DMs via Meta Graph API; mark replied, label threads, add order from chat
+
+## Instagram / Meta API setup
+
+Requires an **Instagram Business** or **Creator** account linked to a **Facebook Page**.
+
+### 1. Create a Meta app
+
+1. Go to [developers.facebook.com](https://developers.facebook.com/) → **My Apps** → **Create App**
+2. Type: **Business** (or Other → Business)
+3. Add products: **Instagram** → **Instagram API setup with Facebook login**
+4. Add **Facebook Login for Business** → set **Valid OAuth Redirect URIs**:
+   - Local: `http://localhost:8080/api/instagram/callback`
+   - Production: `https://YOUR-APP.onrender.com/api/instagram/callback`
+
+### 2. App credentials in `.env`
+
+```bash
+META_APP_ID=your-app-id
+META_APP_SECRET=your-app-secret
+META_REDIRECT_URI=http://localhost:8080/api/instagram/callback
+META_VERIFY_TOKEN=pick-a-random-string
+```
+
+### 3. Connect in Maguro
+
+1. Log in → **Inbox** tab → **Connect Instagram**
+2. Authorize with the Facebook account that manages your Page
+3. Maguro stores the Page token + Instagram business account ID in `data/meta_connection.json`
+
+### 4. Webhooks (real-time DM updates)
+
+In Meta App Dashboard → **Instagram** → **Webhooks**:
+
+| Setting | Value |
+|---------|--------|
+| Callback URL | `https://YOUR-APP.onrender.com/api/instagram/webhook` |
+| Verify token | Same as `META_VERIFY_TOKEN` |
+| Fields | `messages` |
+
+Subscribe your Instagram account to the webhook after connecting.
+
+### 5. Render production notes
+
+- On **Render free tier**, the filesystem is ephemeral — OAuth tokens saved during connect may be lost on redeploy. Either:
+  - Re-connect via **Inbox → Connect Instagram** after each deploy, or
+  - Set long-lived `META_PAGE_ACCESS_TOKEN` + `META_IG_USER_ID` in Render env vars (from [Graph API Explorer](https://developers.facebook.com/tools/explorer/))
+- Set `META_REDIRECT_URI` to `https://YOUR-APP.onrender.com/api/instagram/callback`
+
+### API endpoints
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| GET | `/api/instagram/status` | Yes | Connection status |
+| GET | `/api/instagram/auth` | Yes | Start OAuth |
+| GET | `/api/instagram/callback` | No | OAuth redirect |
+| POST | `/api/instagram/disconnect` | Yes | Clear stored tokens |
+| GET/POST | `/api/instagram/webhook` | No | Meta webhook verify + events |
+| GET | `/api/inbox` | Yes | List DM threads |
+| PATCH | `/api/inbox/{id}` | Yes | Update replied / label |
+
 ## Notion setup
 
 Add these properties to your existing database (keep your current columns):
@@ -69,10 +130,17 @@ Health check: `GET /api/health`
 | `SECRET_KEY` | Yes | random (auto on Render) |
 | `BOX_PRICE` | No | `1350` |
 | `TIMEZONE` | No | `Asia/Bangkok` |
+| `META_APP_ID` | For IG OAuth | — |
+| `META_APP_SECRET` | For IG OAuth | — |
+| `META_REDIRECT_URI` | For IG OAuth | — |
+| `META_VERIFY_TOKEN` | Webhook verify | `maguro-webhook-verify` |
+| `META_PAGE_ACCESS_TOKEN` | Optional direct token | — |
+| `META_IG_USER_ID` | Optional direct token | — |
+| `DATA_DIR` | Token/label storage | `data` |
 
 Optional `NOTION_PROP_*` overrides if your column names differ — see `.env.example`.
 
 ## Roadmap
 
 - Phase 2: Customer address book (separate Notion database)
-- Phase 3: IG link field, delivery fee helpers
+- Phase 3: Delivery fee helpers
