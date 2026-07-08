@@ -40,6 +40,8 @@ class NotionProps:
     fulfillment: str = "Fulfillment"
     address: str = "Address"
     delivery_fee: str = "Delivery Fee"
+    phone: str = "Phone"
+    evidence: str = "Evidence"
 
 
 @dataclass(frozen=True)
@@ -96,6 +98,8 @@ def get_settings() -> Settings:
         fulfillment=_env("NOTION_PROP_FULFILLMENT", "Fulfillment"),
         address=_env("NOTION_PROP_ADDRESS", "Address"),
         delivery_fee=_env("NOTION_PROP_DELIVERY_FEE", "Delivery Fee"),
+        phone=_env("NOTION_PROP_PHONE", "Phone"),
+        evidence=_env("NOTION_PROP_EVIDENCE", "Evidence"),
     )
     return Settings(
         app_password=_env("APP_PASSWORD", "change-me"),

@@ -139,6 +139,10 @@
           <input type="text" name="name" required maxlength="200" placeholder="P' Nant">
         </label>
         <label class="field">
+          <span>Phone</span>
+          <input type="tel" name="phone" maxlength="30" placeholder="08x-xxx-xxxx">
+        </label>
+        <label class="field">
           <span>Date</span>
           <input type="date" name="date" required>
         </label>
@@ -184,6 +188,22 @@
           <button type="submit" class="btn btn-primary">Save order</button>
         </div>
       </form>
+      <div id="order-evidence" class="evidence-section hidden">
+        <h3>Evidence</h3>
+        <p class="evidence-hint">Payment slips, chat/comment screenshots attached to this order.</p>
+        <div id="evidence-list" class="evidence-list"></div>
+        <form id="evidence-form" class="evidence-form">
+          <select name="kind" aria-label="Evidence type">
+            <option value="payment_slip">Payment slip</option>
+            <option value="fb_comment">FB comment screenshot</option>
+            <option value="messenger_chat">Messenger chat screenshot</option>
+            <option value="manual">Other</option>
+          </select>
+          <input type="file" name="file" accept="image/*" required>
+          <button type="submit" class="btn btn-sm btn-ghost">Attach</button>
+        </form>
+        <p id="evidence-error" class="error hidden"></p>
+      </div>
     </section>
   </template>
 

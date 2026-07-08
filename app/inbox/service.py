@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from app.config import INBOX_GROUPS, INBOX_LABELS, INBOX_PENDING_LABELS, get_settings
@@ -128,7 +129,13 @@ def list_inbox_threads() -> list[dict[str, Any]]:
     return threads
 
 
-def update_inbox_thread(conversation_id: str, *, replied: bool | None = None, label: str | None = None) -> dict[str, Any]:
+def update_inbox_thread(
+    conversation_id: str,
+    *,
+    replied: bool | None = None,
+    label: str | None = None,
+    linked_order_id: str | None = None,
+) -> dict[str, Any]:
     if label is not None and label and label not in INBOX_LABELS:
         raise ValueError(f"Invalid label: {label}")
     fields: dict[str, Any] = {}
@@ -136,5 +143,78 @@ def update_inbox_thread(conversation_id: str, *, replied: bool | None = None, la
         fields["replied"] = replied
     if label is not None:
         fields["label"] = label or None
+    if linked_order_id is not None:
+        fields["linked_order_id"] = linked_order_id or None
     state = set_thread_state(conversation_id, **fields)
     return {"id": conversation_id, **state}
+
+
+# --- Order-hint extraction (no LLM: regex + keyword heuristics, MVP) ---
+
+# Thai mobile (0[6-9]xxxxxxxx) or +66 intl form, tolerant of spaces/dashes.
+_PHONE_RE = re.compile(r"(?:\+66|0)[\s-]?\d(?:[\s-]?\d){7,8}")
+
+_ADDRESS_KEYWORDS = (
+    "ที่อยู่",
+    "ซอย",
+    "ถนน",
+    "หมู่",
+    "ตำบล",
+    "อำเภอ",
+    "แขวง",
+    "เขต",
+    "จังหวัด",
+    "รหัสไปรษณีย์",
+    "address",
+    "อยู่แถว",
+    "ส่งที่",
+)
+
+
+def _extract_phone(text: str) -> str | None:
+    match = _PHONE_RE.search(text)
+    if not match:
+        return None
+    return re.sub(r"[\s-]", "", match.group(0))
+
+
+def _extract_address(text: str) -> str | None:
+    """Pick the longest line that looks address-ish. Heuristic, not NLP —
+    flag as a suggestion for human confirmation, never auto-write blind."""
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    candidates = [ln for ln in lines if any(kw in ln for kw in _ADDRESS_KEYWORDS)]
+    if not candidates:
+        return None
+    return max(candidates, key=len)
+
+
+def get_thread_messages(conversation_id: str, *, limit: int = 30) -> list[dict[str, Any]]:
+    """Full(er) message history for a thread, including attachments."""
+    conn = load_meta_connection()
+    client = MetaClient(conn["page_access_token"])
+    return client.get_conversation_messages(conversation_id, limit=limit)
+
+
+def _image_urls_from_messages(messages: list[dict[str, Any]]) -> list[str]:
+    urls: list[str] = []
+    for msg in messages:
+        for att in (msg.get("attachments") or {}).get("data", []):
+            url = (att.get("image_data") or {}).get("url") or att.get("file_url")
+            if url:
+                urls.append(url)
+    return urls
+
+
+def extract_order_hints(conversation_id: str) -> dict[str, Any]:
+    """Regex/keyword suggestions from the DM thread: phone, address, slip images.
+
+    Returns candidates only — caller decides whether/how to apply them
+    (never blind-writes into an order).
+    """
+    messages = get_thread_messages(conversation_id)
+    full_text = "\n".join(msg.get("message", "") or "" for msg in messages)
+    return {
+        "phone": _extract_phone(full_text),
+        "address": _extract_address(full_text),
+        "image_urls": _image_urls_from_messages(messages),
+    }

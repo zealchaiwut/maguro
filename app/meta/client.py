@@ -143,8 +143,9 @@ class MetaClient:
         return results
 
     def get_conversation_messages(self, conversation_id: str, limit: int = 5) -> list[dict[str, Any]]:
-        data = self._get(
-            conversation_id,
-            {"fields": f"messages.limit({limit}){{id,message,created_time,from{{id,username,name}}}}"},
+        fields = (
+            f"messages.limit({limit}){{id,message,created_time,from{{id,username,name}},"
+            "attachments{data{mime_type,image_data{url},file_url}}}"
         )
+        data = self._get(conversation_id, {"fields": fields})
         return data.get("messages", {}).get("data", [])

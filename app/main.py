@@ -8,7 +8,7 @@ from typing import Any
 
 from urllib.parse import quote
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -21,13 +21,16 @@ from app.auth import (
     set_session_cookie,
 )
 from app.config import FULFILLMENT_OPTIONS, INBOX_GROUPS, INBOX_LABELS, ROUNDS, STATUS_OPTIONS, get_settings
-from app.inbox.service import instagram_status, list_inbox_payload, update_inbox_thread
+from app.evidence.ingest import import_remote_images
+from app.evidence.store import EVIDENCE_KINDS, get_evidence, list_evidence, save_evidence
+from app.inbox.service import extract_order_hints, instagram_status, list_inbox_payload, update_inbox_thread
 from app.inbox.store import clear_meta_connection
 from app.meta.client import MetaAPIError
 from app.meta.oauth import build_oauth_url, complete_oauth, verify_oauth_state
 from app.meta.webhook import handle_webhook_payload, parse_raw_json, verify_signature, verify_webhook
 from app.notion.orders import (
     NotionNotConfiguredError,
+    append_evidence_links,
     build_summary,
     create_order,
     default_order_date,
@@ -59,6 +62,7 @@ class OrderBody(BaseModel):
     fulfillment: str
     address: str = ""
     delivery_fee: int = Field(default=0, ge=0)
+    phone: str = ""
 
 
 class OrderPatch(BaseModel):
@@ -72,11 +76,13 @@ class OrderPatch(BaseModel):
     fulfillment: str | None = None
     address: str | None = None
     delivery_fee: int | None = Field(default=None, ge=0)
+    phone: str | None = None
 
 
 class InboxPatch(BaseModel):
     replied: bool | None = None
     label: str | None = None
+    linked_order_id: str | None = None
 
 
 def auth_dep(request: Request) -> None:
@@ -203,6 +209,53 @@ def api_update_order(
         raise _handle_notion_error(exc) from exc
 
 
+@app.get("/api/orders/{order_id}/evidence")
+def api_list_order_evidence(order_id: str, _: None = Depends(auth_dep)) -> list[dict[str, Any]]:
+    return list_evidence(order_id)
+
+
+@app.post("/api/orders/{order_id}/evidence", status_code=201)
+async def api_add_order_evidence(
+    order_id: str,
+    file: UploadFile = File(...),
+    kind: str = Form(default="manual"),
+    _: None = Depends(auth_dep),
+) -> dict[str, Any]:
+    """Attach a screenshot/slip to an order — used for manually-entered orders
+    (FB comment, Messenger chat, etc.) but shares the same evidence pipeline
+    IG-derived slips use, so both sources end up in the same list per order.
+    """
+    if kind not in EVIDENCE_KINDS:
+        raise HTTPException(status_code=422, detail=f"Invalid kind: {kind}")
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=422, detail="Empty file")
+    record = save_evidence(
+        order_id,
+        filename=file.filename or "evidence",
+        content=content,
+        source="manual",
+        kind=kind,
+        content_type=file.content_type or "application/octet-stream",
+    )
+    try:
+        append_evidence_links(order_id, [record["url"]])
+    except Exception as exc:
+        raise _handle_notion_error(exc) from exc
+    return record
+
+
+@app.get("/api/evidence/{evidence_id}")
+def api_get_evidence_file(evidence_id: str, _: None = Depends(auth_dep)) -> FileResponse:
+    record = get_evidence(evidence_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+    path = Path(record["path"])
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Evidence file missing on disk")
+    return FileResponse(path, media_type=record.get("content_type") or None, filename=record.get("filename"))
+
+
 @app.get("/api/instagram/status")
 def api_instagram_status(_: None = Depends(auth_dep)) -> dict[str, Any]:
     return instagram_status()
@@ -299,9 +352,47 @@ def api_inbox_patch(
             conversation_id,
             replied=body.replied,
             label=body.label,
+            linked_order_id=body.linked_order_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/api/inbox/{conversation_id}/extract")
+def api_inbox_extract(
+    conversation_id: str,
+    linked_order_id: str | None = Query(default=None),
+    _: None = Depends(auth_dep),
+) -> dict[str, Any]:
+    """Regex/keyword suggestions (phone, address, slip images) from a DM thread.
+
+    Never blind-writes into Notion — returns candidates. If an order id is
+    given (thread already linked, or passed explicitly), any slip images
+    found are downloaded now (IG CDN links expire fast) and saved as
+    evidence right away, since that part is safe to automate; phone/address
+    still require a human to confirm via PATCH /api/orders/{id}.
+    """
+    try:
+        hints = extract_order_hints(conversation_id)
+    except MetaAPIError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    saved_evidence: list[dict[str, Any]] = []
+    if linked_order_id and hints["image_urls"]:
+        records = import_remote_images(linked_order_id, hints["image_urls"], source="instagram", kind="payment_slip")
+        if records:
+            try:
+                append_evidence_links(linked_order_id, [r["url"] for r in records])
+            except Exception as exc:
+                raise _handle_notion_error(exc) from exc
+        saved_evidence = records
+
+    return {
+        "phone": hints["phone"],
+        "address": hints["address"],
+        "image_urls": hints["image_urls"],
+        "evidence_saved": saved_evidence,
+    }
 
 
 @app.get("/api/summary")
