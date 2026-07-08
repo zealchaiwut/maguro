@@ -8,8 +8,10 @@ from typing import Any
 
 from urllib.parse import quote
 
+import html as html_lib
+
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
-from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -427,6 +429,89 @@ def _validate_order(delivery_time: str, fulfillment: str, status: str) -> None:
     _validate_round(delivery_time)
     _validate_fulfillment(fulfillment)
     _validate_status(status)
+
+
+_ROUND_DISPLAY = {"01_Lunch": "Lunch", "02_Afternoon": "Afternoon", "03_Dinner": "Dinner"}
+
+
+@app.get("/label/{order_id}", response_class=HTMLResponse)
+def label_page(order_id: str, _: None = Depends(auth_dep)) -> str:
+    """Standalone, print-friendly page for one order — for testing label
+    printing over USB via the OS print dialog/driver first. Not part of the
+    JS SPA on purpose: fewer moving pieces to get a physical label out.
+    """
+    try:
+        order = get_order(order_id)
+    except Exception as exc:
+        raise _handle_notion_error(exc) from exc
+
+    name = html_lib.escape(order.get("name") or "")
+    phone = html_lib.escape(order.get("phone") or "") or "&mdash;"
+    note = html_lib.escape(order.get("note") or "") or "&mdash;"
+    round_label = html_lib.escape(_ROUND_DISPLAY.get(order.get("delivery_time"), order.get("delivery_time") or ""))
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Label - {name}</title>
+<style>
+  * {{ box-sizing: border-box; }}
+  body {{
+    font-family: "DM Sans", system-ui, sans-serif;
+    margin: 0;
+    padding: 16px;
+    color: #1a1410;
+    background: #faf6f1;
+  }}
+  .label {{
+    border: 1px solid #1a1410;
+    border-radius: 8px;
+    padding: 18px 20px;
+    max-width: 380px;
+    background: #ffffff;
+  }}
+  .label h1 {{ font-size: 1.4rem; margin: 0 0 10px; }}
+  .label .row {{ margin: 8px 0; font-size: 1.05rem; line-height: 1.4; }}
+  .label .row span.label-key {{ font-weight: 700; display: inline-block; min-width: 90px; }}
+  .round-tag {{
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 999px;
+    background: #f3ddd4;
+    color: #9a3f28;
+    font-weight: 700;
+    font-size: 0.95rem;
+    margin-bottom: 6px;
+  }}
+  .print-btn {{
+    margin-top: 18px;
+    padding: 10px 20px;
+    font-size: 1rem;
+    border-radius: 8px;
+    border: none;
+    background: #c45c3e;
+    color: white;
+    cursor: pointer;
+  }}
+  @media print {{
+    .no-print {{ display: none; }}
+    body {{ padding: 0; background: white; }}
+    .label {{ border: none; max-width: none; }}
+  }}
+</style>
+</head>
+<body>
+  <div class="label">
+    <span class="round-tag">{round_label}</span>
+    <h1>{name}</h1>
+    <div class="row"><span class="label-key">Phone:</span> {phone}</div>
+    <div class="row"><span class="label-key">Notes:</span> {note}</div>
+  </div>
+  <button class="print-btn no-print" onclick="window.print()">Print label</button>
+</body>
+</html>"""
 
 
 @app.get("/")
