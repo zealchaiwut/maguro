@@ -478,6 +478,7 @@ async function renderForm(main) {
     try {
       const order = await api(`/api/orders/${state.editingId}`);
       form.name.value = order.name;
+      form.phone.value = order.phone || '';
       form.date.value = order.date || state.bangkokToday;
       form.amount.value = order.amount;
       form.delivery_fee.value = order.delivery_fee || 0;
@@ -491,6 +492,7 @@ async function renderForm(main) {
       errEl.textContent = err.message;
       errEl.classList.remove('hidden');
     }
+    setupEvidenceSection(state.editingId);
   }
 
   $('#form-cancel').addEventListener('click', () => navigate('orders'));
@@ -500,6 +502,7 @@ async function renderForm(main) {
     errEl.classList.add('hidden');
     const body = {
       name: form.name.value.trim(),
+      phone: form.phone.value.trim(),
       date: form.date.value,
       amount: Number(form.amount.value),
       delivery_fee: Number(form.delivery_fee.value) || 0,
@@ -537,6 +540,69 @@ function esc(str) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+// ── Evidence (payment slips, chat/comment screenshots) ────
+
+function evidenceThumb(item) {
+  const isImage = (item.content_type || '').startsWith('image/');
+  const preview = isImage
+    ? `<img src="${esc(item.url)}" alt="${esc(item.kind)}" loading="lazy">`
+    : `<span class="evidence-file-icon">📎</span>`;
+  return `
+    <a class="evidence-item" href="${esc(item.url)}" target="_blank" rel="noopener">
+      ${preview}
+      <span class="evidence-tag">${esc(item.kind)}${item.source === 'instagram' ? ' · IG' : ''}</span>
+    </a>`;
+}
+
+async function loadEvidenceList(orderId, listEl) {
+  try {
+    const items = await api(`/api/orders/${orderId}/evidence`);
+    listEl.innerHTML = items.length
+      ? items.map(evidenceThumb).join('')
+      : '<p class="empty">No evidence attached yet.</p>';
+  } catch (err) {
+    listEl.innerHTML = `<p class="error">${esc(err.message)}</p>`;
+  }
+}
+
+function setupEvidenceSection(orderId) {
+  const section = $('#order-evidence');
+  section.classList.remove('hidden');
+  const listEl = $('#evidence-list');
+  const form = $('#evidence-form');
+  const errEl = $('#evidence-error');
+
+  loadEvidenceList(orderId, listEl);
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errEl.classList.add('hidden');
+    const file = form.file.files[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('kind', form.kind.value);
+    try {
+      const res = await fetch(`/api/orders/${orderId}/evidence`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: fd,
+      });
+      if (res.status === 401) {
+        showLogin();
+        return;
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || res.statusText);
+      form.reset();
+      await loadEvidenceList(orderId, listEl);
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.classList.remove('hidden');
+    }
+  });
 }
 
 // ── Inbox (Instagram via Meta Graph API) ─────────────
@@ -638,7 +704,13 @@ async function renderInbox(main) {
         <button type="button" class="btn btn-ghost inbox-reply">${t.replied ? 'Mark unread' : 'Mark replied'}</button>
         <a class="btn btn-ghost" href="https://ig.me/m/${encodeURIComponent(t.ig_handle)}" target="_blank" rel="noopener">Open IG</a>
         <button type="button" class="btn btn-primary inbox-order">Add order</button>
-      </div>`;
+      </div>
+      <div class="inbox-link-row">
+        <input type="text" class="inbox-order-id" placeholder="Order ID to link" value="${esc(t.linked_order_id || '')}">
+        <button type="button" class="btn btn-ghost inbox-link-btn">Link</button>
+        <button type="button" class="btn btn-ghost inbox-extract-btn"${t.linked_order_id ? '' : ' disabled'}>Extract from chat</button>
+      </div>
+      <div class="inbox-extract-result hidden"></div>`;
 
     el.querySelector('.inbox-label-select')?.addEventListener('change', (e) => {
       patchThread(t.id, { label: e.target.value || null });
@@ -652,6 +724,44 @@ async function renderInbox(main) {
       state.prefillName = t.display_name || t.ig_handle;
       if (t.preview) state.prefillNote = t.preview;
       navigate('new');
+    });
+
+    const orderIdInput = el.querySelector('.inbox-order-id');
+    const extractBtn = el.querySelector('.inbox-extract-btn');
+
+    el.querySelector('.inbox-link-btn')?.addEventListener('click', () => {
+      patchThread(t.id, { linked_order_id: orderIdInput.value.trim() || null });
+    });
+
+    extractBtn?.addEventListener('click', async () => {
+      const resultEl = el.querySelector('.inbox-extract-result');
+      const linkedOrderId = orderIdInput.value.trim();
+      extractBtn.disabled = true;
+      extractBtn.textContent = 'Extracting…';
+      try {
+        const q = linkedOrderId ? `?linked_order_id=${encodeURIComponent(linkedOrderId)}` : '';
+        const hints = await api(`/api/inbox/${encodeURIComponent(t.id)}/extract${q}`);
+        resultEl.classList.remove('hidden');
+        resultEl.innerHTML = `
+          ${hints.phone ? `<p>Phone: <strong>${esc(hints.phone)}</strong> <button type="button" class="btn btn-sm btn-ghost apply-phone">Apply</button></p>` : '<p class="empty">No phone found.</p>'}
+          ${hints.address ? `<p>Address: <strong>${esc(hints.address)}</strong> <button type="button" class="btn btn-sm btn-ghost apply-address">Apply</button></p>` : '<p class="empty">No address found.</p>'}
+          <p class="empty">${hints.evidence_saved.length ? `${hints.evidence_saved.length} slip image(s) saved as evidence.` : hints.image_urls.length ? `${hints.image_urls.length} image(s) found — link an order first to save them.` : 'No images found.'}</p>`;
+
+        resultEl.querySelector('.apply-phone')?.addEventListener('click', async () => {
+          if (!linkedOrderId) return;
+          await api(`/api/orders/${linkedOrderId}`, { method: 'PATCH', body: JSON.stringify({ phone: hints.phone }) });
+        });
+        resultEl.querySelector('.apply-address')?.addEventListener('click', async () => {
+          if (!linkedOrderId) return;
+          await api(`/api/orders/${linkedOrderId}`, { method: 'PATCH', body: JSON.stringify({ address: hints.address }) });
+        });
+      } catch (err) {
+        resultEl.classList.remove('hidden');
+        resultEl.innerHTML = `<p class="error">${esc(err.message)}</p>`;
+      } finally {
+        extractBtn.disabled = false;
+        extractBtn.textContent = 'Extract from chat';
+      }
     });
 
     return el;

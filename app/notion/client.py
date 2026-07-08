@@ -64,6 +64,8 @@ def parse_order_page(page: dict[str, Any], props: NotionProps) -> dict[str, Any]
         "fulfillment": _select(p, props.fulfillment),
         "address": _rich_text(p, props.address),
         "delivery_fee": _number(p, props.delivery_fee),
+        "phone": _rich_text(p, props.phone),
+        "evidence": _rich_text(p, props.evidence),
     }
 
 
@@ -104,6 +106,16 @@ def build_order_properties(data: dict[str, Any], props: NotionProps) -> dict[str
     if "delivery_fee" in data:
         fee = data["delivery_fee"]
         payload[props.delivery_fee] = {"number": int(fee) if fee not in (None, "") else 0}
+
+    if "phone" in data:
+        payload[props.phone] = {
+            "rich_text": [{"text": {"content": data["phone"] or ""}}],
+        }
+
+    if "evidence" in data:
+        payload[props.evidence] = {
+            "rich_text": [{"text": {"content": data["evidence"] or ""}}],
+        }
 
     return payload
 

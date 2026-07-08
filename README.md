@@ -86,6 +86,8 @@ Add these properties to your existing database (keep your current columns):
 | **Fulfillment** | Select | `Delivery`, `Pick-up` |
 | **Address** | Text | optional |
 | **Delivery Fee** | Number | ฿, separate from box price |
+| **Phone** | Text | optional, customer phone number |
+| **Evidence** | Text | optional — newline-separated links to attached payment slips / screenshots (app manages this field) |
 
 ### Notion integration
 
@@ -139,6 +141,26 @@ Health check: `GET /api/health`
 | `DATA_DIR` | Token/label storage | `data` |
 
 Optional `NOTION_PROP_*` overrides if your column names differ — see `.env.example`.
+
+## Instagram DM → order evidence
+
+Orders come in over Instagram DM (chat + payment slip in the same thread), so the inbox can pull
+suggestions and evidence straight from a thread:
+
+- **Link an order**: on a thread in the Inbox tab, paste an order's ID into "Order ID to link" → **Link**.
+- **Extract from chat**: pulls the thread's messages and suggests a **phone** (regex) and **address**
+  (keyword heuristic — no LLM, so it's a suggestion to review/apply, never auto-written into Notion).
+  Any payment-slip images found are downloaded immediately (Instagram's CDN links expire fast) and saved
+  as evidence on the linked order right away, since that part is safe to automate.
+- **Manual orders**: open an existing order to edit it — an **Evidence** section lets you attach a
+  screenshot (FB comment, Messenger chat, etc.) directly. Same storage pipeline as Instagram-derived
+  slips, just tagged `source: manual`.
+
+Evidence files live on local disk under `DATA_DIR/evidence/` (metadata in `DATA_DIR/evidence_index.json`)
+and are served through an authenticated `/api/evidence/{id}` endpoint; Notion's Evidence column only gets
+the link text. **Note:** Render's free-tier disk is ephemeral — evidence files won't survive a
+redeploy/restart there. Fine for casual use; if that starts to matter, swap `app/evidence/store.py` for
+an S3/R2-backed implementation (same function signatures, so nothing else needs to change).
 
 ## Roadmap
 

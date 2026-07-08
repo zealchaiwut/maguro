@@ -940,3 +940,107 @@ html, body {
     display: contents;
   }
 }
+
+/* Evidence (payment slips, chat/comment screenshots) */
+.evidence-section {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.evidence-section h3 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+
+.evidence-hint {
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+  margin: 0 0 12px;
+}
+
+.evidence-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.evidence-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 84px;
+  text-decoration: none;
+  color: inherit;
+}
+
+.evidence-item img,
+.evidence-file-icon {
+  width: 84px;
+  height: 84px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+}
+
+.evidence-tag {
+  font-size: 0.68rem;
+  color: var(--ink-muted);
+  text-align: center;
+  line-height: 1.2;
+}
+
+.evidence-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.evidence-form select,
+.evidence-form input[type="file"] {
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+/* Inbox — link order + extraction */
+.inbox-link-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.inbox-order-id {
+  flex: 1;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 0.8rem;
+  background: var(--bg-card);
+  color: var(--ink);
+}
+
+.inbox-extract-result {
+  margin-top: 8px;
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  font-size: 0.85rem;
+}
+
+.inbox-extract-result p {
+  margin: 0 0 6px;
+}
+
+.inbox-extract-result .empty {
+  color: var(--ink-faint);
+  font-size: 0.78rem;
+}
