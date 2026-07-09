@@ -9,9 +9,25 @@ Homemade bento order tracker for two-person use. Notion is the database; this ap
 - **Day summary** — total orders & boxes, revenue estimate (฿1,350/box + delivery fees), delivery & pick-up lists per round with notes
 - **Status** — `Open` while active, mark `Done` when delivered (payment tracked separately via `Paid`)
 
-- **Inbox** — sync Instagram DMs via Meta Graph API; mark replied, label threads, add order from chat
+- **Inbox** — paste a DM thread to extract phone/address suggestions (primary path); optionally sync Instagram DMs via Meta Graph API — mark replied, label threads, add order from chat
+- **Copy messages** — per-order confirm/tracking messages in Thai, one tap to clipboard, paste into Instagram
 
-## Instagram / Meta API setup
+## Order capture: paste flow (primary path)
+
+Orders arrive via Instagram DM, but the Graph API integration below is optional — at
+~20 orders per drop the manual paste flow gets the same value with no Meta dependency:
+
+1. Copy the conversation text from Instagram (long-press → copy on mobile).
+2. **Inbox** tab → paste into **Paste DM thread** → **Find phone & address**.
+3. Review the suggested phone/address (regex + keyword heuristics — suggestions only,
+   never auto-written to Notion) → **Apply to new order** pre-fills the add-order form.
+4. After saving, each order card has **Copy confirm** / **Copy tracking** buttons that
+   build a ready-to-paste Thai message from the order's fields.
+
+The Instagram API path (next section) reuses the same extraction heuristics and remains
+available if/when the Meta app gets the required access.
+
+## Instagram / Meta API setup (optional)
 
 Requires an **Instagram Business** or **Creator** account linked to a **Facebook Page**.
 
@@ -69,6 +85,8 @@ Subscribe your Instagram account to the webhook after connecting.
 | GET/POST | `/api/instagram/webhook` | No | Meta webhook verify + events |
 | GET | `/api/inbox` | Yes | List DM threads |
 | PATCH | `/api/inbox/{id}` | Yes | Update replied / label |
+| POST | `/api/inbox/extract` | Yes | Phone/address suggestions from pasted DM text (no Meta needed) |
+| GET | `/api/orders/{id}/message?template=confirm\|tracking` | Yes | Copy-able Thai customer message built from order fields |
 
 ## Notion setup
 

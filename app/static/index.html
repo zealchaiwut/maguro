@@ -116,6 +116,14 @@
         <h2>Instagram inbox</h2>
       </div>
       <p class="inbox-hint">DM threads from Instagram — mark replied and label before adding to Orders.</p>
+      <div class="paste-extract">
+        <label class="field">
+          <span>Paste DM thread</span>
+          <textarea id="paste-dm-text" rows="4" placeholder="Copy the chat from Instagram and paste it here…"></textarea>
+        </label>
+        <button type="button" id="paste-extract-btn" class="btn btn-primary btn-block">Find phone &amp; address</button>
+        <div id="paste-extract-result" class="inbox-extract-result hidden"></div>
+      </div>
       <div id="inbox-connect" class="inbox-connect">
         <p id="inbox-status-text" class="inbox-connect-msg">Connect your Instagram business account to sync DMs.</p>
         <button type="button" id="inbox-connect-btn" class="btn btn-primary btn-block">Connect Instagram</button>

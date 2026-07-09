@@ -1044,3 +1044,24 @@ html, body {
   color: var(--ink-faint);
   font-size: 0.78rem;
 }
+
+/* Inbox — paste DM thread (Meta-free extraction) */
+.paste-extract {
+  margin-bottom: 16px;
+}
+
+.paste-extract .field {
+  margin-bottom: 8px;
+}
+
+.paste-extract .paste-apply {
+  margin-top: 4px;
+}
+
+/* Order card — copy customer message */
+.order-copy-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+

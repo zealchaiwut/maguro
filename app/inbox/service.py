@@ -205,16 +205,23 @@ def _image_urls_from_messages(messages: list[dict[str, Any]]) -> list[str]:
     return urls
 
 
-def extract_order_hints(conversation_id: str) -> dict[str, Any]:
-    """Regex/keyword suggestions from the DM thread: phone, address, slip images.
+def extract_hints_from_text(text: str) -> dict[str, Any]:
+    """Phone + address suggestions from raw DM text. No Meta dependency.
 
     Returns candidates only — caller decides whether/how to apply them
     (never blind-writes into an order).
     """
+    return {"phone": _extract_phone(text), "address": _extract_address(text)}
+
+
+def extract_order_hints(conversation_id: str) -> dict[str, Any]:
+    """Regex/keyword suggestions from the DM thread: phone, address, slip images.
+
+    Unchanged public behaviour — now delegates to extract_hints_from_text.
+    """
     messages = get_thread_messages(conversation_id)
     full_text = "\n".join(msg.get("message", "") or "" for msg in messages)
     return {
-        "phone": _extract_phone(full_text),
-        "address": _extract_address(full_text),
+        **extract_hints_from_text(full_text),
         "image_urls": _image_urls_from_messages(messages),
     }

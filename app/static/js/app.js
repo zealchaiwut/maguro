@@ -11,6 +11,8 @@ const state = {
   prefillDate: null,
   prefillName: null,
   prefillNote: null,
+  prefillPhone: null,
+  prefillAddress: null,
   bangkokToday: '',
   inboxLabels: ['Interested', 'Confirmed', 'Asked price', 'No reply needed'],
   inboxFilter: 'all',
@@ -343,7 +345,30 @@ function orderCard(order, { clickable = true } = {}) {
     <div class="order-tags">${tags}</div>
     ${order.note ? `<p class="order-note">${esc(order.note)}</p>` : ''}
     ${order.address ? `<p class="order-address">📍 ${esc(order.address)}</p>` : ''}
+    <div class="order-copy-row">
+      <button type="button" class="btn btn-sm btn-ghost copy-msg" data-template="confirm">Copy confirm</button>
+      <button type="button" class="btn btn-sm btn-ghost copy-msg" data-template="tracking">Copy tracking</button>
+    </div>
   `;
+
+  el.querySelectorAll('.copy-msg').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const original = btn.textContent;
+      btn.disabled = true;
+      try {
+        const { text } = await api(`/api/orders/${order.id}/message?template=${btn.dataset.template}`);
+        await navigator.clipboard.writeText(text);
+        btn.textContent = 'Copied ✓';
+      } catch {
+        btn.textContent = 'Copy failed';
+      }
+      setTimeout(() => {
+        btn.textContent = original;
+        btn.disabled = false;
+      }, 1500);
+    });
+  });
   return el;
 }
 
@@ -467,9 +492,17 @@ async function renderForm(main) {
   if (state.prefillNote) {
     form.note.value = state.prefillNote;
   }
+  if (state.prefillPhone) {
+    form.phone.value = state.prefillPhone;
+  }
+  if (state.prefillAddress) {
+    form.address.value = state.prefillAddress;
+  }
   state.prefillDate = null;
   state.prefillName = null;
   state.prefillNote = null;
+  state.prefillPhone = null;
+  state.prefillAddress = null;
   form.fulfillment.value = 'Delivery';
   form.delivery_time.value = state.config.rounds[0];
   form.status.value = 'Open';
@@ -605,6 +638,48 @@ function setupEvidenceSection(orderId) {
   });
 }
 
+// ── Paste DM thread → phone/address suggestions (no Meta needed) ────
+
+function setupPasteExtract() {
+  const textarea = $('#paste-dm-text');
+  const btn = $('#paste-extract-btn');
+  const resultEl = $('#paste-extract-result');
+  if (!textarea || !btn) return;
+
+  btn.addEventListener('click', async () => {
+    const text = textarea.value.trim();
+    if (!text) {
+      textarea.focus();
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = 'Extracting…';
+    try {
+      const hints = await api('/api/inbox/extract', {
+        method: 'POST',
+        body: JSON.stringify({ text }),
+      });
+      resultEl.classList.remove('hidden');
+      resultEl.innerHTML = `
+        ${hints.phone ? `<p>Phone: <strong>${esc(hints.phone)}</strong></p>` : '<p class="empty">No phone found.</p>'}
+        ${hints.address ? `<p>Address: <strong>${esc(hints.address)}</strong></p>` : '<p class="empty">No address found.</p>'}
+        ${hints.phone || hints.address ? '<button type="button" class="btn btn-sm btn-primary paste-apply">Apply to new order</button>' : ''}`;
+
+      resultEl.querySelector('.paste-apply')?.addEventListener('click', () => {
+        state.prefillPhone = hints.phone || null;
+        state.prefillAddress = hints.address || null;
+        navigate('new');
+      });
+    } catch (err) {
+      resultEl.classList.remove('hidden');
+      resultEl.innerHTML = `<p class="error">${esc(err.message)}</p>`;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Find phone & address';
+    }
+  });
+}
+
 // ── Inbox (Instagram via Meta Graph API) ─────────────
 
 function formatRelativeTime(iso) {
@@ -657,6 +732,8 @@ async function renderInbox(main) {
     errEl.textContent = flags.error;
     errEl.classList.remove('hidden');
   }
+
+  setupPasteExtract();
 
   connectBtn?.addEventListener('click', () => {
     window.location.href = '/api/instagram/auth';

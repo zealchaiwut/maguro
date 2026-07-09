@@ -176,6 +176,13 @@ def append_evidence_links(order_id: str, urls: list[str]) -> dict[str, Any]:
     return update_order(order_id, {"evidence": "\n".join(combined)})
 
 
+def order_total(order: dict[str, Any], settings: Settings | None = None) -> int:
+    """Total for one order in ฿ — the per-order unit of build_summary's
+    grand_total (boxes × box price + delivery fee)."""
+    settings = settings or get_settings()
+    return order["amount"] * settings.box_price + order["delivery_fee"]
+
+
 def build_summary(date: str, *, open_only: bool = False) -> dict[str, Any]:
     settings = get_settings()
     orders = list_orders(date, include_done=not open_only)

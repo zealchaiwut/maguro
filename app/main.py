@@ -25,8 +25,15 @@ from app.auth import (
 from app.config import FULFILLMENT_OPTIONS, INBOX_GROUPS, INBOX_LABELS, ROUNDS, STATUS_OPTIONS, get_settings
 from app.evidence.ingest import import_remote_images
 from app.evidence.store import EVIDENCE_KINDS, get_evidence, list_evidence, save_evidence
-from app.inbox.service import extract_order_hints, instagram_status, list_inbox_payload, update_inbox_thread
+from app.inbox.service import (
+    extract_hints_from_text,
+    extract_order_hints,
+    instagram_status,
+    list_inbox_payload,
+    update_inbox_thread,
+)
 from app.inbox.store import clear_meta_connection
+from app.messages import TEMPLATES, build_message
 from app.meta.client import MetaAPIError
 from app.meta.oauth import build_oauth_url, complete_oauth, verify_oauth_state
 from app.meta.webhook import handle_webhook_payload, parse_raw_json, verify_signature, verify_webhook
@@ -85,6 +92,10 @@ class InboxPatch(BaseModel):
     replied: bool | None = None
     label: str | None = None
     linked_order_id: str | None = None
+
+
+class ExtractTextBody(BaseModel):
+    text: str = Field(max_length=20_000)
 
 
 def auth_dep(request: Request) -> None:
@@ -209,6 +220,24 @@ def api_update_order(
         return update_order(order_id, data)
     except Exception as exc:
         raise _handle_notion_error(exc) from exc
+
+
+@app.get("/api/orders/{order_id}/message")
+def api_order_message(
+    order_id: str,
+    template: str = Query(...),
+    _: None = Depends(auth_dep),
+) -> dict[str, str]:
+    """Ready-to-paste Thai customer message (confirm / tracking) built from
+    the order's fields — copied to clipboard in the UI, pasted into IG."""
+    if template not in TEMPLATES:
+        valid = ", ".join(sorted(TEMPLATES))
+        raise HTTPException(status_code=400, detail=f"Unknown template: {template}. Valid: {valid}")
+    try:
+        order = get_order(order_id)
+    except Exception as exc:
+        raise _handle_notion_error(exc) from exc
+    return {"text": build_message(order, template)}
 
 
 @app.get("/api/orders/{order_id}/evidence")
@@ -360,6 +389,17 @@ def api_inbox_patch(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@app.post("/api/inbox/extract")
+def api_inbox_extract_text(body: ExtractTextBody, _: None = Depends(auth_dep)) -> dict[str, Any]:
+    """Phone/address suggestions from pasted DM text — the Meta-free path.
+
+    Same heuristics as the thread-based extract below, but the operator
+    pastes the conversation instead of the app fetching it from the Graph
+    API. Suggestions only; nothing is written to Notion.
+    """
+    return extract_hints_from_text(body.text)
+
+
 @app.get("/api/inbox/{conversation_id}/extract")
 def api_inbox_extract(
     conversation_id: str,
@@ -433,6 +473,93 @@ def _validate_order(delivery_time: str, fulfillment: str, status: str) -> None:
 
 _ROUND_DISPLAY = {"01_Lunch": "Lunch", "02_Afternoon": "Afternoon", "03_Dinner": "Dinner"}
 
+_LABEL_STYLE = """
+  * { box-sizing: border-box; }
+  @page {
+    size: 40mm 30mm;
+    margin: 0;
+  }
+  body {
+    font-family: "DM Sans", system-ui, sans-serif;
+    margin: 0;
+    padding: 8mm;
+    color: #1a1410;
+    background: #cfcac4;
+  }
+  .label-sheet { display: flex; flex-direction: column; gap: 8mm; }
+  .label {
+    width: 40mm;
+    height: 30mm;
+    border: 1px solid #1a1410;
+    padding: 1.5mm 2mm;
+    background: #ffffff;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6mm;
+  }
+  .label h1 {
+    font-size: 9pt;
+    margin: 0;
+    line-height: 1.1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .label .row {
+    margin: 0;
+    font-size: 6.5pt;
+    line-height: 1.15;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .label .row span.label-key { font-weight: 700; }
+  .round-tag {
+    display: inline-block;
+    width: fit-content;
+    padding: 0.3mm 1.5mm;
+    border-radius: 3mm;
+    background: #f3ddd4;
+    color: #9a3f28;
+    font-weight: 700;
+    font-size: 6pt;
+  }
+  .print-btn {
+    margin-top: 6mm;
+    padding: 10px 20px;
+    font-size: 1rem;
+    border-radius: 8px;
+    border: none;
+    background: #c45c3e;
+    color: white;
+    cursor: pointer;
+  }
+  @media print {
+    .no-print { display: none; }
+    body { padding: 0; background: white; }
+    .label-sheet { gap: 0; }
+    .label { border: none; }
+    .label:not(:last-child) { page-break-after: always; }
+  }
+"""
+
+
+def _label_block(order: dict[str, Any]) -> str:
+    name = html_lib.escape(order.get("name") or "")
+    phone = html_lib.escape(order.get("phone") or "") or "&mdash;"
+    note = html_lib.escape(order.get("note") or "") or "notes"
+    amount = order.get("amount")
+    order_count = f"{amount} order(s)" if amount not in (None, "") else "order(s)"
+    round_label = html_lib.escape(_ROUND_DISPLAY.get(order.get("delivery_time"), order.get("delivery_time") or ""))
+    return f"""<div class="label">
+    <span class="round-tag">{round_label}</span>
+    <h1>{name}</h1>
+    <div class="row"><span class="label-key">Phone:</span> {phone}</div>
+    <div class="row"><span class="label-key">Order(s):</span> {order_count}</div>
+    <div class="row"><span class="label-key">Notes:</span> {note}</div>
+  </div>"""
+
 
 @app.get("/label/{order_id}", response_class=HTMLResponse)
 def label_page(order_id: str, _: None = Depends(auth_dep)) -> str:
@@ -446,9 +573,6 @@ def label_page(order_id: str, _: None = Depends(auth_dep)) -> str:
         raise _handle_notion_error(exc) from exc
 
     name = html_lib.escape(order.get("name") or "")
-    phone = html_lib.escape(order.get("phone") or "") or "&mdash;"
-    note = html_lib.escape(order.get("note") or "") or "&mdash;"
-    round_label = html_lib.escape(_ROUND_DISPLAY.get(order.get("delivery_time"), order.get("delivery_time") or ""))
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -456,60 +580,52 @@ def label_page(order_id: str, _: None = Depends(auth_dep)) -> str:
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Label - {name}</title>
-<style>
-  * {{ box-sizing: border-box; }}
-  body {{
-    font-family: "DM Sans", system-ui, sans-serif;
-    margin: 0;
-    padding: 16px;
-    color: #1a1410;
-    background: #faf6f1;
-  }}
-  .label {{
-    border: 1px solid #1a1410;
-    border-radius: 8px;
-    padding: 18px 20px;
-    max-width: 380px;
-    background: #ffffff;
-  }}
-  .label h1 {{ font-size: 1.4rem; margin: 0 0 10px; }}
-  .label .row {{ margin: 8px 0; font-size: 1.05rem; line-height: 1.4; }}
-  .label .row span.label-key {{ font-weight: 700; display: inline-block; min-width: 90px; }}
-  .round-tag {{
-    display: inline-block;
-    padding: 4px 12px;
-    border-radius: 999px;
-    background: #f3ddd4;
-    color: #9a3f28;
-    font-weight: 700;
-    font-size: 0.95rem;
-    margin-bottom: 6px;
-  }}
-  .print-btn {{
-    margin-top: 18px;
-    padding: 10px 20px;
-    font-size: 1rem;
-    border-radius: 8px;
-    border: none;
-    background: #c45c3e;
-    color: white;
-    cursor: pointer;
-  }}
-  @media print {{
-    .no-print {{ display: none; }}
-    body {{ padding: 0; background: white; }}
-    .label {{ border: none; max-width: none; }}
-  }}
-</style>
+<style>{_LABEL_STYLE}</style>
 </head>
 <body>
-  <div class="label">
-    <span class="round-tag">{round_label}</span>
-    <h1>{name}</h1>
-    <div class="row"><span class="label-key">Phone:</span> {phone}</div>
-    <div class="row"><span class="label-key">Notes:</span> {note}</div>
+  <div class="label-sheet">
+    {_label_block(order)}
   </div>
   <button class="print-btn no-print" onclick="window.print()">Print label</button>
+</body>
+</html>"""
+
+
+@app.get("/label/round/{date}/{round_key}", response_class=HTMLResponse)
+def label_round_page(date: str, round_key: str, _: None = Depends(auth_dep)) -> str:
+    """Batch print page: one physical label per order for a given delivery
+    round/date, laid out as consecutive same-size pages so a single print
+    job feeds the whole round's labels back to back.
+    """
+    try:
+        orders = list_orders(date)
+    except Exception as exc:
+        raise _handle_notion_error(exc) from exc
+
+    round_orders = [o for o in orders if o.get("delivery_time") == round_key]
+    if not round_orders:
+        raise HTTPException(status_code=404, detail=f"No orders found for {round_key} on {date}")
+
+    round_label = html_lib.escape(_ROUND_DISPLAY.get(round_key, round_key))
+    date_esc = html_lib.escape(date)
+    blocks = "\n    ".join(_label_block(o) for o in round_orders)
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Labels - {round_label} {date_esc}</title>
+<style>{_LABEL_STYLE}</style>
+</head>
+<body>
+  <div class="no-print" style="margin-bottom: 12px; font-family: sans-serif;">
+    {len(round_orders)} label(s) for {round_label} &middot; {date_esc}
+  </div>
+  <div class="label-sheet">
+    {blocks}
+  </div>
+  <button class="print-btn no-print" onclick="window.print()">Print all labels</button>
 </body>
 </html>"""
 
