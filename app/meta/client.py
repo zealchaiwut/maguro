@@ -21,8 +21,15 @@ class MetaClient:
     def __init__(self, access_token: str | None = None):
         settings = get_settings()
         self.version = settings.meta_graph_version
-        self.base = f"https://graph.facebook.com/{self.version}"
         self.token = access_token or ""
+        # Native Instagram Login tokens (prefix "IGAA") only work against
+        # graph.instagram.com; classic Facebook Login Page tokens (prefix
+        # "EAA") work against graph.facebook.com. Auto-detect so both the
+        # direct-token shortcut and (if fixed later) the classic OAuth path
+        # hit the right host.
+        ig_native_host = self.token.startswith("IGAA")
+        host = "graph.instagram.com" if ig_native_host else "graph.facebook.com"
+        self.base = f"https://{host}/{self.version}"
 
     def _get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         query = dict(params or {})
@@ -126,20 +133,17 @@ class MetaClient:
             "fields": fields,
             "limit": 50,
         }
-        while True:
-            data = self._get(f"{ig_user_id}/conversations", params)
-            results.extend(data.get("data", []))
-            next_url = data.get("paging", {}).get("next")
-            if not next_url:
-                break
+        data = self._get(f"{ig_user_id}/conversations", params)
+        results.extend(data.get("data", []))
+        next_url = data.get("paging", {}).get("next")
+        while next_url:
             with httpx.Client(timeout=30.0) as client:
                 resp = client.get(next_url)
             data = resp.json()
             if resp.status_code >= 400 or "error" in data:
                 break
             results.extend(data.get("data", []))
-            if not data.get("paging", {}).get("next"):
-                break
+            next_url = data.get("paging", {}).get("next")
         return results
 
     def get_conversation_messages(self, conversation_id: str, limit: int = 5) -> list[dict[str, Any]]:
