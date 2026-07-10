@@ -9,6 +9,85 @@ Homemade bento order tracker for two-person use. Notion is the database; this ap
 - **Day summary** — total orders & boxes, revenue estimate (฿1,350/box + delivery fees), delivery & pick-up lists per round with notes
 - **Status** — `Open` while active, mark `Done` when delivered (payment tracked separately via `Paid`)
 
+- **Inbox** — paste a DM thread to extract phone/address suggestions (primary path); optionally sync Instagram DMs via Meta Graph API — mark replied, label threads, add order from chat
+- **Copy messages** — per-order confirm/tracking messages in Thai, one tap to clipboard, paste into Instagram
+
+## Order capture: paste flow (primary path)
+
+Orders arrive via Instagram DM, but the Graph API integration below is optional — at
+~20 orders per drop the manual paste flow gets the same value with no Meta dependency:
+
+1. Copy the conversation text from Instagram (long-press → copy on mobile).
+2. **Inbox** tab → paste into **Paste DM thread** → **Find phone & address**.
+3. Review the suggested phone/address (regex + keyword heuristics — suggestions only,
+   never auto-written to Notion) → **Apply to new order** pre-fills the add-order form.
+4. After saving, each order card has **Copy confirm** / **Copy tracking** buttons that
+   build a ready-to-paste Thai message from the order's fields.
+
+The Instagram API path (next section) reuses the same extraction heuristics and remains
+available if/when the Meta app gets the required access.
+
+## Instagram / Meta API setup (optional)
+
+Requires an **Instagram Business** or **Creator** account linked to a **Facebook Page**.
+
+### 1. Create a Meta app
+
+1. Go to [developers.facebook.com](https://developers.facebook.com/) → **My Apps** → **Create App**
+2. Type: **Business** (or Other → Business)
+3. Add products: **Instagram** → **Instagram API setup with Facebook login**
+4. Add **Facebook Login for Business** → set **Valid OAuth Redirect URIs**:
+   - Local: `http://localhost:8080/api/instagram/callback`
+   - Production: `https://YOUR-APP.onrender.com/api/instagram/callback`
+
+### 2. App credentials in `.env`
+
+```bash
+META_APP_ID=your-app-id
+META_APP_SECRET=your-app-secret
+META_REDIRECT_URI=http://localhost:8080/api/instagram/callback
+META_VERIFY_TOKEN=pick-a-random-string
+```
+
+### 3. Connect in Maguro
+
+1. Log in → **Inbox** tab → **Connect Instagram**
+2. Authorize with the Facebook account that manages your Page
+3. Maguro stores the Page token + Instagram business account ID in `data/meta_connection.json`
+
+### 4. Webhooks (real-time DM updates)
+
+In Meta App Dashboard → **Instagram** → **Webhooks**:
+
+| Setting | Value |
+|---------|--------|
+| Callback URL | `https://YOUR-APP.onrender.com/api/instagram/webhook` |
+| Verify token | Same as `META_VERIFY_TOKEN` |
+| Fields | `messages` |
+
+Subscribe your Instagram account to the webhook after connecting.
+
+### 5. Render production notes
+
+- On **Render free tier**, the filesystem is ephemeral — OAuth tokens saved during connect may be lost on redeploy. Either:
+  - Re-connect via **Inbox → Connect Instagram** after each deploy, or
+  - Set long-lived `META_PAGE_ACCESS_TOKEN` + `META_IG_USER_ID` in Render env vars (from [Graph API Explorer](https://developers.facebook.com/tools/explorer/))
+- Set `META_REDIRECT_URI` to `https://YOUR-APP.onrender.com/api/instagram/callback`
+
+### API endpoints
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| GET | `/api/instagram/status` | Yes | Connection status |
+| GET | `/api/instagram/auth` | Yes | Start OAuth |
+| GET | `/api/instagram/callback` | No | OAuth redirect |
+| POST | `/api/instagram/disconnect` | Yes | Clear stored tokens |
+| GET/POST | `/api/instagram/webhook` | No | Meta webhook verify + events |
+| GET | `/api/inbox` | Yes | List DM threads |
+| PATCH | `/api/inbox/{id}` | Yes | Update replied / label |
+| POST | `/api/inbox/extract` | Yes | Phone/address suggestions from pasted DM text (no Meta needed) |
+| GET | `/api/orders/{id}/message?template=confirm\|tracking` | Yes | Copy-able Thai customer message built from order fields |
+
 ## Notion setup
 
 Add these properties to your existing database (keep your current columns):
@@ -25,6 +104,8 @@ Add these properties to your existing database (keep your current columns):
 | **Fulfillment** | Select | `Delivery`, `Pick-up` |
 | **Address** | Text | optional |
 | **Delivery Fee** | Number | ฿, separate from box price |
+| **Phone** | Text | optional, customer phone number |
+| **Evidence** | Text | optional — newline-separated links to attached payment slips / screenshots (app manages this field) |
 
 ### Notion integration
 
@@ -69,10 +150,37 @@ Health check: `GET /api/health`
 | `SECRET_KEY` | Yes | random (auto on Render) |
 | `BOX_PRICE` | No | `1350` |
 | `TIMEZONE` | No | `Asia/Bangkok` |
+| `META_APP_ID` | For IG OAuth | — |
+| `META_APP_SECRET` | For IG OAuth | — |
+| `META_REDIRECT_URI` | For IG OAuth | — |
+| `META_VERIFY_TOKEN` | Webhook verify | `maguro-webhook-verify` |
+| `META_PAGE_ACCESS_TOKEN` | Optional direct token | — |
+| `META_IG_USER_ID` | Optional direct token | — |
+| `DATA_DIR` | Token/label storage | `data` |
 
 Optional `NOTION_PROP_*` overrides if your column names differ — see `.env.example`.
+
+## Instagram DM → order evidence
+
+Orders come in over Instagram DM (chat + payment slip in the same thread), so the inbox can pull
+suggestions and evidence straight from a thread:
+
+- **Link an order**: on a thread in the Inbox tab, paste an order's ID into "Order ID to link" → **Link**.
+- **Extract from chat**: pulls the thread's messages and suggests a **phone** (regex) and **address**
+  (keyword heuristic — no LLM, so it's a suggestion to review/apply, never auto-written into Notion).
+  Any payment-slip images found are downloaded immediately (Instagram's CDN links expire fast) and saved
+  as evidence on the linked order right away, since that part is safe to automate.
+- **Manual orders**: open an existing order to edit it — an **Evidence** section lets you attach a
+  screenshot (FB comment, Messenger chat, etc.) directly. Same storage pipeline as Instagram-derived
+  slips, just tagged `source: manual`.
+
+Evidence files live on local disk under `DATA_DIR/evidence/` (metadata in `DATA_DIR/evidence_index.json`)
+and are served through an authenticated `/api/evidence/{id}` endpoint; Notion's Evidence column only gets
+the link text. **Note:** Render's free-tier disk is ephemeral — evidence files won't survive a
+redeploy/restart there. Fine for casual use; if that starts to matter, swap `app/evidence/store.py` for
+an S3/R2-backed implementation (same function signatures, so nothing else needs to change).
 
 ## Roadmap
 
 - Phase 2: Customer address book (separate Notion database)
-- Phase 3: IG link field, delivery fee helpers
+- Phase 3: Delivery fee helpers

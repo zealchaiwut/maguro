@@ -11,7 +11,17 @@
   <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-  <div id="app">
+  <div class="device-stage">
+    <div class="device-iphone14pro">
+      <div class="device-island" aria-hidden="true"></div>
+      <div class="device-screen">
+        <div class="browser-chrome" aria-hidden="true">
+          <div class="browser-url-bar">
+            <span class="browser-lock" aria-hidden="true">🔒</span>
+            <span class="browser-url">maguro.onrender.com</span>
+          </div>
+        </div>
+        <div id="app">
     <!-- Login -->
     <section id="view-login" class="view hidden">
       <div class="login-card">
@@ -49,8 +59,9 @@
           <span class="nav-icon">📊</span>
           <span>Summary</span>
         </button>
-        <button type="button" class="nav-item nav-add" data-route="new">
-          <span class="nav-icon">＋</span>
+        <button type="button" class="nav-item" data-route="inbox">
+          <span class="nav-icon">💬</span>
+          <span>Inbox</span>
         </button>
       </nav>
     </div>
@@ -58,8 +69,11 @@
 
   <template id="tpl-orders">
     <section class="page">
-      <div class="page-header">
-        <h2>Orders</h2>
+      <div class="page-header page-header-orders">
+        <div class="page-title-row">
+          <h2>Orders</h2>
+          <button type="button" id="btn-add-order" class="btn-add-order" aria-label="New order">＋</button>
+        </div>
         <div class="date-picker-row">
           <select id="orders-date" class="date-select"></select>
           <button type="button" id="orders-new-date" class="btn btn-sm btn-ghost">+ New date</button>
@@ -96,6 +110,32 @@
     </section>
   </template>
 
+  <template id="tpl-inbox">
+    <section class="page page-inbox">
+      <div class="page-header">
+        <h2>Instagram inbox</h2>
+      </div>
+      <p class="inbox-hint">DM threads from Instagram — mark replied and label before adding to Orders.</p>
+      <div class="paste-extract">
+        <label class="field">
+          <span>Paste DM thread</span>
+          <textarea id="paste-dm-text" rows="4" placeholder="Copy the chat from Instagram and paste it here…"></textarea>
+        </label>
+        <button type="button" id="paste-extract-btn" class="btn btn-primary btn-block">Find phone &amp; address</button>
+        <div id="paste-extract-result" class="inbox-extract-result hidden"></div>
+      </div>
+      <div id="inbox-connect" class="inbox-connect">
+        <p id="inbox-status-text" class="inbox-connect-msg">Connect your Instagram business account to sync DMs.</p>
+        <button type="button" id="inbox-connect-btn" class="btn btn-primary btn-block">Connect Instagram</button>
+        <button type="button" id="inbox-disconnect-btn" class="btn btn-ghost btn-block hidden">Disconnect</button>
+        <p id="inbox-error" class="error hidden"></p>
+      </div>
+      <div id="inbox-filters" class="inbox-filters hidden"></div>
+      <div id="inbox-list" class="inbox-list"></div>
+      <p id="inbox-empty" class="empty hidden">No messages yet.</p>
+    </section>
+  </template>
+
   <template id="tpl-form">
     <section class="page">
       <div class="page-header">
@@ -105,6 +145,10 @@
         <label class="field">
           <span>Customer name</span>
           <input type="text" name="name" required maxlength="200" placeholder="P' Nant">
+        </label>
+        <label class="field">
+          <span>Phone</span>
+          <input type="tel" name="phone" maxlength="30" placeholder="08x-xxx-xxxx">
         </label>
         <label class="field">
           <span>Date</span>
@@ -152,6 +196,22 @@
           <button type="submit" class="btn btn-primary">Save order</button>
         </div>
       </form>
+      <div id="order-evidence" class="evidence-section hidden">
+        <h3>Evidence</h3>
+        <p class="evidence-hint">Payment slips, chat/comment screenshots attached to this order.</p>
+        <div id="evidence-list" class="evidence-list"></div>
+        <form id="evidence-form" class="evidence-form">
+          <select name="kind" aria-label="Evidence type">
+            <option value="payment_slip">Payment slip</option>
+            <option value="fb_comment">FB comment screenshot</option>
+            <option value="messenger_chat">Messenger chat screenshot</option>
+            <option value="manual">Other</option>
+          </select>
+          <input type="file" name="file" accept="image/*" required>
+          <button type="submit" class="btn btn-sm btn-ghost">Attach</button>
+        </form>
+        <p id="evidence-error" class="error hidden"></p>
+      </div>
     </section>
   </template>
 
@@ -169,6 +229,13 @@
       </div>
     </form>
   </dialog>
+
+        </div><!-- #app -->
+      </div><!-- .device-screen -->
+      <div class="device-home-indicator" aria-hidden="true"></div>
+    </div><!-- .device-iphone14pro -->
+    <p class="device-label">iPhone 14 Pro · 393 × 852</p>
+  </div><!-- .device-stage -->
 
   <script src="/static/js/app.js" type="module"></script>
 </body>
