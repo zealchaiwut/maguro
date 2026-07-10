@@ -474,56 +474,112 @@ def _validate_order(delivery_time: str, fulfillment: str, status: str) -> None:
 _ROUND_DISPLAY = {"01_Lunch": "Lunch", "02_Afternoon": "Afternoon", "03_Dinner": "Dinner"}
 
 _LABEL_STYLE = """
-  * { box-sizing: border-box; }
+  @import url('https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@400;600;800&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
   @page {
     size: 40mm 30mm;
     margin: 0;
   }
   body {
-    font-family: "DM Sans", system-ui, sans-serif;
+    font-family: "Archivo", system-ui, sans-serif;
     margin: 0;
     padding: 8mm;
-    color: #1a1410;
-    background: #cfcac4;
+    color: #000;
+    background: #9a978f;
   }
   .label-sheet { display: flex; flex-direction: column; gap: 8mm; }
   .label {
+    background: #fff;
+    color: #000;
     width: 40mm;
     height: 30mm;
-    border: 1px solid #1a1410;
-    padding: 1.5mm 2mm;
-    background: #ffffff;
+    border: 0.5mm solid #000;
+    padding: 1mm;
     overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0,0,0,.35);
+  }
+  .label .inner {
+    border: 0.2mm solid #000;
+    padding: 1.2mm 1.2mm 1mm;
+    height: 100%;
     display: flex;
     flex-direction: column;
-    gap: 0.6mm;
   }
-  .label h1 {
-    font-size: 9pt;
-    margin: 0;
-    line-height: 1.1;
-    white-space: nowrap;
+  .label .top {
+    display: flex;
+    align-items: center;
+    gap: 1mm;
+    margin-bottom: 1mm;
+  }
+  .brand .en {
+    font-family: "Anton", sans-serif;
+    font-size: 2.7mm;
+    letter-spacing: 0.1mm;
+    text-transform: uppercase;
+    line-height: 1;
+  }
+  .qty {
+    margin-left: auto;
+    font-family: "Anton", sans-serif;
+    font-size: 4.9mm;
+    line-height: .85;
+    text-align: right;
+  }
+  .qty small {
+    display: block;
+    font-family: "Archivo", sans-serif;
+    font-weight: 800;
+    font-size: 1.1mm;
+    letter-spacing: 0.25mm;
+    text-transform: uppercase;
+  }
+  .mealbar {
+    background: #fff;
+    color: #000;
+    border: 0.35mm solid #000;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.8mm 1.3mm;
+    margin-bottom: 1.2mm;
+  }
+  .mealbar .m {
+    font-family: "Anton", sans-serif;
+    font-size: 2.2mm;
+    letter-spacing: 0.35mm;
+    text-transform: uppercase;
+    line-height: 1;
+  }
+  .label .name {
+    font-family: "Anton", sans-serif;
+    font-size: 3.8mm;
+    line-height: .98;
+    text-transform: uppercase;
+    letter-spacing: 0.05mm;
+    word-break: break-word;
+  }
+  .rule { height: 0; border-top: 0.45mm solid #000; margin: 1.1mm 0 0.25mm; }
+  .rule.thin { border-top: 0.2mm solid #000; margin: 0.25mm 0 1.2mm; }
+  .notes-h {
+    font-weight: 800;
+    font-size: 1.2mm;
+    letter-spacing: 0.25mm;
+    margin-bottom: 0.8mm;
+    text-transform: uppercase;
+  }
+  .noteline {
+    min-height: 1.8mm;
+    font-size: 1.8mm;
+    line-height: 1.2;
     overflow: hidden;
-    text-overflow: ellipsis;
   }
-  .label .row {
-    margin: 0;
-    font-size: 6.5pt;
-    line-height: 1.15;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .label .row span.label-key { font-weight: 700; }
-  .round-tag {
-    display: inline-block;
-    width: fit-content;
-    padding: 0.3mm 1.5mm;
-    border-radius: 3mm;
-    background: #f3ddd4;
-    color: #9a3f28;
-    font-weight: 700;
-    font-size: 6pt;
+  .thanks {
+    margin-top: auto;
+    padding-top: 1mm;
+    text-align: right;
+    font-weight: 600;
+    font-size: 1.4mm;
+    letter-spacing: 0.1mm;
   }
   .print-btn {
     margin-top: 6mm;
@@ -539,7 +595,7 @@ _LABEL_STYLE = """
     .no-print { display: none; }
     body { padding: 0; background: white; }
     .label-sheet { gap: 0; }
-    .label { border: none; }
+    .label { box-shadow: none; }
     .label:not(:last-child) { page-break-after: always; }
   }
 """
@@ -547,17 +603,23 @@ _LABEL_STYLE = """
 
 def _label_block(order: dict[str, Any]) -> str:
     name = html_lib.escape(order.get("name") or "")
-    phone = html_lib.escape(order.get("phone") or "") or "&mdash;"
-    note = html_lib.escape(order.get("note") or "") or "notes"
+    note = html_lib.escape(order.get("note") or "")
     amount = order.get("amount")
-    order_count = f"{amount} order(s)" if amount not in (None, "") else "order(s)"
+    qty = amount if amount not in (None, "") else 1
     round_label = html_lib.escape(_ROUND_DISPLAY.get(order.get("delivery_time"), order.get("delivery_time") or ""))
     return f"""<div class="label">
-    <span class="round-tag">{round_label}</span>
-    <h1>{name}</h1>
-    <div class="row"><span class="label-key">Phone:</span> {phone}</div>
-    <div class="row"><span class="label-key">Order(s):</span> {order_count}</div>
-    <div class="row"><span class="label-key">Notes:</span> {note}</div>
+    <div class="inner">
+      <div class="top">
+        <div class="brand"><div class="en">Bento</div></div>
+        <div class="qty">&times;{qty}<small>Boxes</small></div>
+      </div>
+      <div class="mealbar"><span class="m">{round_label}</span></div>
+      <div class="name">{name}</div>
+      <div class="rule"></div><div class="rule thin"></div>
+      <div class="notes-h">Notes</div>
+      <div class="noteline">{note}</div>
+      <div class="thanks">Thank you @bbneverfull</div>
+    </div>
   </div>"""
 
 

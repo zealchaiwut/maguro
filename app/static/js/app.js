@@ -348,8 +348,11 @@ function orderCard(order, { clickable = true } = {}) {
     <div class="order-copy-row">
       <button type="button" class="btn btn-sm btn-ghost copy-msg" data-template="confirm">Copy confirm</button>
       <button type="button" class="btn btn-sm btn-ghost copy-msg" data-template="tracking">Copy tracking</button>
+      <a class="btn btn-sm btn-ghost order-label-link" href="/label/${order.id}" target="_blank" rel="noopener">🏷 Label</a>
     </div>
   `;
+
+  el.querySelector('.order-label-link')?.addEventListener('click', (e) => e.stopPropagation());
 
   el.querySelectorAll('.copy-msg').forEach((btn) => {
     btn.addEventListener('click', async (e) => {
@@ -424,6 +427,7 @@ async function renderSummary(main) {
               <div class="round-box-hero">${round.box_count}<span>boxes</span></div>
             </div>
             <div class="round-summary-sub">${round.order_count} order${round.order_count !== 1 ? 's' : ''}</div>
+            <a class="btn btn-sm btn-ghost round-labels-link" href="/label/round/${dateSelect.value}/${round.name}" target="_blank" rel="noopener">🏷 Labels</a>
           </div>`;
 
         if (round.deliveries.length) {
